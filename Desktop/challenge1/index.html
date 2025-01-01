@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Student Performance Analysis</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .chart-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 30px;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .chart {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .title {
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .axis-label {
+            font-size: 12px;
+            fill: #666;
+        }
+        .tick text {
+            font-size: 11px;
+            fill: #666;
+        }
+        .legend-text {
+            font-size: 12px;
+            fill: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="chart-container">
+        <div class="chart" id="motivation-impact"></div>
+        <div class="chart" id="score-progression"></div>
+        <div class="chart" id="location-impact"></div>
+    </div>
+
+<script>
+// Common dimensions
+const margin = {top: 40, right: 60, bottom: 60, left: 60};
+const width = 500 - margin.left - margin.right;
+const height = 400 - margin.top - margin.bottom;
+
+// Parse date function
+const parseDate = dateStr => {
+    const [day, month, year] = dateStr.split('/');
+    return new Date(2000 + parseInt(year), parseInt(month) - 1, parseInt(day));
+};
+
+// Load and process data
+d3.csv("dataset.csv").then(data => {
+    // Data preprocessing
+    data.forEach(d => {
+        // Convert scores to numbers
+        d["Score actuel"] = +d["Score actuel"] || 0;
+        d["Score primaire"] = +d["Score primaire"] || 0;
+        d["Score collégial"] = +d["Score collégial"] || 0;
+        d["score en mathématiques"] = +d["score en mathématiques"] || 0;
+        d["score en langue arabe"] = +d["score en langue arabe"] || 0;
+        d.Age = parseDate(d.Age);
+    });
+
+    // Create all visualizations
+    createMotivationBoxPlot(data);
+    createScoreProgressionChart(data);
+    createLocationBarChart(data);
+}).catch(error => console.error("Error loading data:", error));
+
+function createMotivationBoxPlot(data) {
+    const svg = d3.select("#motivation-impact")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Process data for boxplot
+    const motivatedScores = data.filter(d => d.motivation === "Oui")
+        .map(d => d["Score actuel"])
+        .filter(d => !isNaN(d));
+    const unmotivatedScores = data.filter(d => d.motivation === "Non")
+        .map(d => d["Score actuel"])
+        .filter(d => !isNaN(d));
+
+    function calculateQuartiles(arr) {
+        if (arr.length === 0) return null;
+        const sorted = arr.sort(d3.ascending);
+        return {
+            q1: d3.quantile(sorted, 0.25),
+            median: d3.quantile(sorted, 0.5),
+            q3: d3.quantile(sorted, 0.75),
+            min: d3.min(sorted),
+            max: d3.max(sorted),
+            mean: d3.mean(sorted)
+        };
+    }
+
+    const motivatedStats = calculateQuartiles(motivatedScores);
+    const unmotivatedStats = calculateQuartiles(unmotivatedScores);
+
+    // Set up scales
+    const yScale = d3.scaleLinear()
+        .domain([0, 20])
+        .range([height, 0]);
+
+    const xScale = d3.scaleBand()
+        .domain(["Motivated", "Unmotivated"])
+        .range([0, width])
+        .padding(0.4);
+
+    // Create boxplots
+    const boxWidth = 50;
+
+    function addBoxPlot(stats, x, color) {
+        if (!stats) return;
+
+        // Vertical line (min to max)
+        svg.append("line")
+            .attr("x1", x)
+            .attr("x2", x)
+            .attr("y1", yScale(stats.min))
+            .attr("y2", yScale(stats.max))
+            .attr("stroke", "#666")
+            .attr("stroke-width", 1);
+
+        // Box
+        svg.append("rect")
+            .attr("x", x - boxWidth/2)
+            .attr("y", yScale(stats.q3))
+            .attr("height", yScale(stats.q1) - yScale(stats.q3))
+            .attr("width", boxWidth)
+            .attr("fill", color)
+            .attr("stroke", "#666");
+
+        // Median line
+        svg.append("line")
+            .attr("x1", x - boxWidth/2)
+            .attr("x2", x + boxWidth/2)
+            .attr("y1", yScale(stats.median))
+            .attr("y2", yScale(stats.median))
+            .attr("stroke", "#000")
+            .attr("stroke-width", 2);
+
+        // Mean point
+        svg.append("circle")
+            .attr("cx", x)
+            .attr("cy", yScale(stats.mean))
+            .attr("r", 4)
+            .attr("fill", "white")
+            .attr("stroke", "#000");
+    }
+
+    // Add boxplots
+    addBoxPlot(motivatedStats, xScale("Motivated"), "#4ecdc4");
+    addBoxPlot(unmotivatedStats, xScale("Unmotivated"), "#ff6b6b");
+
+    // Add axes
+    svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(xScale));
+
+    svg.append("g")
+        .call(d3.axisLeft(yScale));
+
+    // Add title
+    svg.append("text")
+        .attr("class", "title")
+        .attr("x", width/2)
+        .attr("y", -margin.top/2)
+        .attr("text-anchor", "middle")
+        .text("Score Distribution by Motivation");
+
+    // Add labels
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("x", width/2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Motivation Status");
+
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height/2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("Scores");
+}
+
+function createScoreProgressionChart(data) {
+    const svg = d3.select("#score-progression")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Calculate averages
+    const stages = ["Primary", "College", "Current"];
+    const averages = [
+        d3.mean(data, d => d["Score primaire"]),
+        d3.mean(data, d => d["Score collégial"]),
+        d3.mean(data, d => d["Score actuel"])
+    ];
+
+    // Set up scales
+    const xScale = d3.scaleBand()
+        .domain(stages)
+        .range([0, width])
+        .padding(0.2);
+
+    const yScale = d3.scaleLinear()
+        .domain([0, d3.max(averages) * 1.2])
+        .range([height, 0]);
+
+    // Create gradient
+    const gradient = svg.append("defs")
+        .append("linearGradient")
+        .attr("id", "bar-gradient")
+        .attr("x1", "0%")
+        .attr("y1", "0%")
+        .attr("x2", "0%")
+        .attr("y2", "100%");
+
+    gradient.append("stop")
+        .attr("offset", "0%")
+        .attr("stop-color", "#4ecdc4");
+
+    gradient.append("stop")
+        .attr("offset", "100%")
+        .attr("stop-color", "#45b7ae");
+
+    // Add bars
+    svg.selectAll(".bar")
+        .data(averages)
+        .enter()
+        .append("rect")
+        .attr("class", "bar")
+        .attr("x", (d, i) => xScale(stages[i]))
+        .attr("y", d => yScale(d))
+        .attr("width", xScale.bandwidth())
+        .attr("height", d => height - yScale(d))
+        .attr("fill", "url(#bar-gradient)")
+        .attr("rx", 4);
+
+    // Add value labels
+    svg.selectAll(".value-label")
+        .data(averages)
+        .enter()
+        .append("text")
+        .attr("class", "value-label")
+        .attr("x", (d, i) => xScale(stages[i]) + xScale.bandwidth()/2)
+        .attr("y", d => yScale(d) - 5)
+        .attr("text-anchor", "middle")
+        .text(d => d.toFixed(2));
+
+    // Add axes
+    svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(xScale));
+
+    svg.append("g")
+        .call(d3.axisLeft(yScale));
+
+    // Add title
+    svg.append("text")
+        .attr("class", "title")
+        .attr("x", width/2)
+        .attr("y", -margin.top/2)
+        .attr("text-anchor", "middle")
+        .text("Score Progression Over Time");
+
+    // Add labels
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("x", width/2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Academic Stage");
+
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height/2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("Average Score");
+}
+
+function createLocationBarChart(data) {
+    const svg = d3.select("#location-impact")
+        .append("svg")
+        .attr("width", width + margin.left + margin.right)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    // Process data
+    const locationScores = d3.group(data, d => d.Zone);
+    const averagesByLocation = Array.from(locationScores, ([key, values]) => ({
+        location: key,
+        mathScore: d3.mean(values, d => d["score en mathématiques"]),
+        arabicScore: d3.mean(values, d => d["score en langue arabe"])
+    }));
+
+    // Set up scales
+    const xScale = d3.scaleBand()
+        .domain(averagesByLocation.map(d => d.location))
+        .range([0, width])
+        .padding(0.3);
+
+    const yScale = d3.scaleLinear()
+        .domain([0, 8])
+        .range([height, 0]);
+
+    const subgroups = ["mathScore", "arabicScore"];
+    const xSubgroup = d3.scaleBand()
+        .domain(subgroups)
+        .range([0, xScale.bandwidth()])
+        .padding(0.1);
+
+    const colors = d3.scaleOrdinal()
+        .domain(subgroups)
+        .range(["#4ecdc4", "#ff6b6b"]);
+
+    // Add bars
+    averagesByLocation.forEach(location => {
+        subgroups.forEach(subject => {
+            svg.append("rect")
+                .attr("x", xScale(location.location) + xSubgroup(subject))
+                .attr("y", yScale(location[subject]))
+                .attr("width", xSubgroup.bandwidth())
+                .attr("height", height - yScale(location[subject]))
+                .attr("fill", colors(subject));
+        });
+    });
+
+    // Add axes
+    svg.append("g")
+        .attr("transform", `translate(0,${height})`)
+        .call(d3.axisBottom(xScale));
+
+    svg.append("g")
+        .call(d3.axisLeft(yScale));
+
+    // Add title
+    svg.append("text")
+        .attr("class", "title")
+        .attr("x", width/2)
+        .attr("y", -margin.top/2)
+        .attr("text-anchor", "middle")
+        .text("Average Scores by Location");
+
+    // Add labels
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("x", width/2)
+        .attr("y", height + 40)
+        .attr("text-anchor", "middle")
+        .text("Locations");
+
+    svg.append("text")
+        .attr("class", "axis-label")
+        .attr("transform", "rotate(-90)")
+        .attr("x", -height/2)
+        .attr("y", -40)
+        .attr("text-anchor", "middle")
+        .text("Scores");
+
+    // Add legend
+    const legend = svg.append("g")
+        .attr("transform", `translate(${width + 10}, 0)`);
+
+    legend.selectAll("rect")
+        .data(["Math", "Arabic"])
+        .enter()
+        .append("rect")
+        .attr("x", 0)
+        .attr("y", (d, i) => i * 25)
+        .attr("width", 12)
+        .attr("height", 12)
+        .attr("fill", (d, i) => colors(subgroups[i]));
+
+    legend.selectAll("text")
+        .data(["Math", "Arabic"])
+        .enter()
+        .append("text")
+        .attr("x", 20)
+        .attr("y", (d, i) => i * 25 + 9)
+        .attr("class", "legend-text")
+        .text(d => d);
+}
+</script>
+</body>
+</html>
